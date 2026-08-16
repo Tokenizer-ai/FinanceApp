@@ -1,0 +1,26 @@
+# Never commit application state or credentials
+data/
+*.db
+*.db-*
+*.db.bak-*
+.env
+.env.*
+*.pem
+
+# Exports may contain real balances and positions
+exports/
+*-portfolio-export*.csv
+*-portfolio-analysis*.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Build residue (if vendored into the app repo)
+node_modules/
+.next/
