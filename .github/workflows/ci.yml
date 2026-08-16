@@ -1,0 +1,65 @@
+name: docs-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint and validate documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install tooling
+        run: npm install -g markdownlint-cli@0.41.0 markdown-link-check@3.12.2 @mermaid-js/mermaid-cli@10.9.0
+
+      - name: markdownlint
+        run: markdownlint '**/*.md' --ignore node_modules
+
+      - name: Internal link check
+        run: |
+          find . -name '*.md' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 markdown-link-check --config .github/link-check.json --quiet
+
+      - name: Mermaid parse check
+        run: |
+          set -e
+          fail=0
+          for f in $(grep -rl '```mermaid' --include='*.md' .); do
+            awk '/```mermaid/{flag=1;n++;next}/```/{flag=0}flag{print > ("/tmp/mmd-" n ".mmd")}' "$f"
+          done
+          for m in /tmp/mmd-*.mmd; do
+            [ -e "$m" ] || continue
+            mmdc -i "$m" -o /tmp/out.svg >/dev/null 2>&1 || { echo "Mermaid parse failed in $m"; fail=1; }
+          done
+          exit $fail
+
+  guard:
+    name: Guard against committed secrets and state
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No database or export files
+        run: |
+          if git ls-files | grep -E '\.(db|db-wal|db-shm)$|^data/|portfolio-export.*\.csv$'; then
+            echo "::error::Application state or exports must never be committed."
+            exit 1
+          fi
+
+      - name: No SimpleFIN access URLs
+        run: |
+          if grep -rInE 'https://[^ ]*:[^ ]*@[^ ]*simplefin' --include='*.md' .; then
+            echo "::error::A SimpleFIN access URL (credential) appears in the docs."
+            exit 1
+          fi
+
+      - name: Verify ledger present and parseable
+        run: test -f docs/VERIFY-LEDGER.md && grep -q '^| \`V-001\`' docs/VERIFY-LEDGER.md
